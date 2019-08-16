@@ -33,6 +33,7 @@ message TensorProto {
   // can be used for all tensor types. The purpose of this representation is to
   // reduce serialization overhead during RPC call by avoiding serialization of
   // many repeated small items.
+  // The byte order of this field is always little-endian.
   bytes tensor_content = 4;
 
   // Type specific representations that make it easy to create tensor protos in
