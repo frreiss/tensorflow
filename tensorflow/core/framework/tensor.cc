@@ -54,6 +54,7 @@ limitations under the License.
 #include "tensorflow/core/platform/protobuf.h"
 #include "tensorflow/core/platform/tensor_coding.h"
 #include "tensorflow/core/platform/types.h"
+#include "tensorflow/core/util/byte_swap.h"
 
 namespace tensorflow {
 
@@ -136,8 +137,20 @@ struct Helper {
   template <typename Destination>
   static void Encode(TensorBuffer* in, int64 n, Destination* out) {
     DCHECK_EQ(in->size(), sizeof(T) * n);
-    port::AssignRefCounted(StringPiece(in->base<const char>(), in->size()), in,
-                           out);
+    if (port::kLittleEndian) {
+      port::AssignRefCounted(StringPiece(in->base<const char>(), in->size()),
+                             in, out);
+    } else {
+      // Values in TensorProto::tensor_content are always in little-endian
+      // format. Byte-swap if the host architecture is big-endian.
+      // The input buffer might be shared, and the output buffer, being wrapped
+      // in a std::string object, can't be cast to anything but const char*. So
+      // we need to copy twice.
+      std::unique_ptr<char[]> mutable_buffer(new char[in->size()]);
+      memcpy(mutable_buffer.get(), in->base<const char>(), in->size());
+      TF_CHECK_OK(ByteSwapArray(mutable_buffer.get(), sizeof(T), n));
+      port::CopyFromArray(out, mutable_buffer.get(), in->size());
+    }
   }
 
   // Decoder of simple type T. Copy the bytes from "in" into the
@@ -155,6 +168,11 @@ struct Helper {
       return nullptr;
     }
     port::CopyToArray(in, data);
+    if (false == port::kLittleEndian) {
+      // Values in TensorProto::tensor_content are always in little-endian
+      // format.
+      TF_CHECK_OK(ByteSwapArray(data, sizeof(T), n));
+    }
     return buf;
   }
 
@@ -627,14 +645,14 @@ bool Tensor::IsInitialized() const {
 }
 
 void Tensor::CheckType(DataType expected_dtype) const {
-  CHECK_EQ(dtype(), expected_dtype) << " "
-      << DataTypeString(expected_dtype) << " expected, got "
+  CHECK_EQ(dtype(), expected_dtype)
+      << " " << DataTypeString(expected_dtype) << " expected, got "
       << DataTypeString(dtype());
 }
 
 void Tensor::CheckTypeAndIsAligned(DataType expected_dtype) const {
-  CHECK_EQ(dtype(), expected_dtype) << " "
-      << DataTypeString(expected_dtype) << " expected, got "
+  CHECK_EQ(dtype(), expected_dtype)
+      << " " << DataTypeString(expected_dtype) << " expected, got "
       << DataTypeString(dtype());
   CHECK(IsAligned()) << "ptr = " << base<void>();
 }

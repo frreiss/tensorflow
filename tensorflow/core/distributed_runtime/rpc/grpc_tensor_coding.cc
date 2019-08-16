@@ -25,6 +25,7 @@ limitations under the License.
 #include "tensorflow/core/lib/io/proto_encode_helper.h"
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/protobuf/worker.pb.h"
+#include "tensorflow/core/util/byte_swap.h"
 
 // (Omitted internal-only flag)
 
@@ -167,6 +168,13 @@ void EncodeTensorToByteBuffer(bool is_dead, const Tensor& val, bool require_ack,
     string header;  // All of RecvTensorResponse except the tensor() field
     response.AppendToString(&header);
 
+    // TensorProto::tensor_content is always in little-endian format.
+    // Check whether we need to swap bytes to convert from the host's native
+    // format. Note that this check would also need to look at the dtype if it
+    // weren't for the branch on DataTypeCanUseMemcpy() earlier in this
+    // function.
+    bool need_to_swap_bytes = (not port::kLittleEndian);
+
     size_t expected_size =
         (header.size() +
          VarLengthEncodingSize(RecvTensorResponse::kTensorFieldNumber,
@@ -180,8 +188,10 @@ void EncodeTensorToByteBuffer(bool is_dead, const Tensor& val, bool require_ack,
     // backing store, with appropriate reference counts to keep the
     // backing store alive as needed.
     //
-    // We enable this behavior if the tensor is large.
-    bool share_tensor_slice_memory = (tdata.size() > kLargeTensorBytes);
+    // We enable this behavior if the tensor is large and we don't need to
+    // byte-swap to convert the data to little-endian format.
+    bool share_tensor_slice_memory =
+        (tdata.size() > kLargeTensorBytes) && (not need_to_swap_bytes);
 
     // (Omitted internal-only conditional)
 
@@ -215,8 +225,17 @@ void EncodeTensorToByteBuffer(bool is_dead, const Tensor& val, bool require_ack,
       memcpy(const_cast<uint8_t*>(slices[0].begin()), e.data(), e.size());
       if (!share_tensor_slice_memory) {
         // (E)
-        memcpy(const_cast<uint8_t*>(slices[0].begin()) + e.size(), tdata.data(),
-               tdata.size());
+        auto dst = const_cast<uint8_t*>(slices[0].begin()) + e.size();
+        memcpy(dst, tdata.data(), tdata.size());
+        if (need_to_swap_bytes) {
+          // TensorProto::tensor_content is always in little-endian byte order.
+          // Swap bytes in place in the destination buffer if needed.
+          int bytes_per_elem = DataTypeSize(val.dtype());
+          DCHECK_GT(bytes_per_elem, 0);
+          TF_CHECK_OK(ByteSwapArray(reinterpret_cast<char*>(dst),
+                                    static_cast<size_t>(bytes_per_elem),
+                                    tdata.size() / bytes_per_elem));
+        }
       }
       num_slices += 1;
     }
