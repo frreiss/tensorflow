@@ -31,7 +31,7 @@ limitations under the License.
 #include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/test.h"
 #include "tensorflow/core/platform/test_benchmark.h"
-#include "tensorflow/core/util/tensor_bundle/byte_swap.h"
+#include "tensorflow/core/util/byte_swap.h"
 
 namespace tensorflow {
 

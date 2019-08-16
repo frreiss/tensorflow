@@ -43,7 +43,7 @@ limitations under the License.
 #include "tensorflow/core/lib/random/random.h"
 #include "tensorflow/core/lib/strings/stringprintf.h"
 #include "tensorflow/core/util/saved_tensor_slice_util.h"
-#include "tensorflow/core/util/tensor_bundle/byte_swap.h"
+#include "tensorflow/core/util/byte_swap.h"
 #include "tensorflow/core/util/tensor_slice_util.h"
 
 namespace tensorflow {
