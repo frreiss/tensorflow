@@ -4166,6 +4166,7 @@ tf_cc_tests(
         "graph/tensor_id_test.cc",
         "graph/validate_test.cc",
         "util/bcast_test.cc",
+        "util/byte_swap_test.cc",
         "util/command_line_flags_test.cc",
         "util/device_name_utils_test.cc",
         "util/dump_graph_test.cc",
