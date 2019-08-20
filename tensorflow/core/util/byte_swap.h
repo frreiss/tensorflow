@@ -114,6 +114,12 @@ Status ByteSwapArray<complex64>(complex64 *array, int array_len);
 template <>
 Status ByteSwapArray<complex128>(complex128 *array, int array_len);
 
+// Catch-all specialization needs to be in this file to avoid linker errors.
+template <typename T>
+Status ByteSwapArray(T* array, int array_len) {
+  return ByteSwapArray(reinterpret_cast<char*>(array), sizeof(T), array_len);
+}
+
 // Byte-swap a tensor's backing buffer in place.
 //
 // Args:

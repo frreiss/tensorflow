@@ -47,11 +47,6 @@ Status ByteSwapArray(char* array, size_t bytes_per_elem, int array_len) {
   }
 }
 
-template <typename T>
-Status ByteSwapArray(T* array, int array_len) {
-  return ByteSwapArray(reinterpret_cast<char*>(array), sizeof(T), array_len);
-}
-
 // Special-case handling for complex numbers, which are actually arrays of
 // 2-element structs.
 template <>
