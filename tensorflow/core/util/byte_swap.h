@@ -99,6 +99,21 @@ namespace tensorflow {
 //
 Status ByteSwapArray(char *array, size_t bytes_per_elem, int array_len);
 
+// Templated interface to ByteSwapArray for arrays of known C++ type. Knows
+// about the complex64 and complex128 types being special cases.
+//
+// Args:
+//  array: Pointer to the beginning of the array
+//  array_len: Number of elements in the array
+template <typename T>
+Status ByteSwapArray(T *array, int array_len);
+
+// Explicit specializations with logic for dealing with complex types
+template <>
+Status ByteSwapArray<complex64>(complex64 *array, int array_len);
+template <>
+Status ByteSwapArray<complex128>(complex128 *array, int array_len);
+
 // Byte-swap a tensor's backing buffer in place.
 //
 // Args:

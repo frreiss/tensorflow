@@ -47,6 +47,22 @@ Status ByteSwapArray(char* array, size_t bytes_per_elem, int array_len) {
   }
 }
 
+template <typename T>
+Status ByteSwapArray(T* array, int array_len) {
+  return ByteSwapArray(reinterpret_cast<char*>(array), sizeof(T), array_len);
+}
+
+// Special-case handling for complex numbers, which are actually arrays of
+// 2-element structs.
+template <>
+Status ByteSwapArray<complex64>(complex64* array, int array_len) {
+  return ByteSwapArray(reinterpret_cast<char*>(array), 4, array_len * 2);
+}
+template <>
+Status ByteSwapArray<complex128>(complex128* array, int array_len) {
+  return ByteSwapArray(reinterpret_cast<char*>(array), 8, array_len * 2);
+}
+
 Status ByteSwapTensor(Tensor* t) {
   size_t bytes_per_elem = 0;
   int array_len = t->NumElements();

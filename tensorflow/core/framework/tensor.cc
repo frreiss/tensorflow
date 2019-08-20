@@ -146,10 +146,11 @@ struct Helper {
       // The input buffer might be shared, and the output buffer, being wrapped
       // in a std::string object, can't be cast to anything but const char*. So
       // we need to copy twice.
-      std::unique_ptr<char[]> mutable_buffer(new char[in->size()]);
+      std::unique_ptr<T[]> mutable_buffer(new T[in->size()]);
       memcpy(mutable_buffer.get(), in->base<const char>(), in->size());
-      TF_CHECK_OK(ByteSwapArray(mutable_buffer.get(), sizeof(T), n));
-      port::CopyFromArray(out, mutable_buffer.get(), in->size());
+      TF_CHECK_OK(ByteSwapArray(mutable_buffer.get(), n));
+      port::CopyFromArray(out, reinterpret_cast<char*>(mutable_buffer.get()),
+                          in->size());
     }
   }
 
@@ -171,7 +172,7 @@ struct Helper {
     if (false == port::kLittleEndian) {
       // Values in TensorProto::tensor_content are always in little-endian
       // format.
-      TF_CHECK_OK(ByteSwapArray(data, sizeof(T), n));
+      TF_CHECK_OK(ByteSwapArray(reinterpret_cast<T*>(data), n));
     }
     return buf;
   }
