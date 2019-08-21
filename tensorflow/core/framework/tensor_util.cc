@@ -313,6 +313,10 @@ bool CompressRepeatedField(float min_compression_ratio,
     gtl::InlinedVector<T, 64> tmp(num_tensor_values);
     TypeHelper::CopyValues(tmp.begin(), *tensor);
     TypeHelper::Truncate(0, tensor);
+    if (not port::kLittleEndian) {
+      // tensor_content is always in little-endian format.
+      ByteSwapArray(tmp.data(), num_tensor_values);
+    }
     port::CopyFromArray(tensor->mutable_tensor_content(),
                         reinterpret_cast<const char*>(tmp.data()),
                         num_bytes_as_tensor_content);
