@@ -220,14 +220,7 @@ bool CompressTensorContent(float min_compression_ratio,
   }
 
   // The tensor_content field is always stored in little-endian order.
-  // Byte-swap if necessary.
-  if (not port::kLittleEndian) {
-    // It's safe to swap the values in place because all paths out of this
-    // function call clear_tensor_content().
-    TF_CHECK_OK(
-        ByteSwapArray(reinterpret_cast<T*>(tensor->mutable_tensor_content()),
-                      new_num_values));
-  }
+  bool need_to_swap_bytes = (not port::kLittleEndian and sizeof(T) > 1);
 
   // Copy values to truncated repeated field.
   if (sizeof(FieldType) == sizeof(T)) {
@@ -236,6 +229,9 @@ bool CompressTensorContent(float min_compression_ratio,
     port::CopySubrangeToArray(tensor->tensor_content(), 0,
                               new_num_values * sizeof(T),
                               reinterpret_cast<char*>(dst_ptr));
+    if (need_to_swap_bytes) {
+      TF_CHECK_OK(ByteSwapArray(dst_ptr, new_num_values));
+    }
     tensor->clear_tensor_content();
   } else if (sizeof(T) > 1) {
     // Copy raw bytes to temp array first, then cast.
@@ -243,6 +239,9 @@ bool CompressTensorContent(float min_compression_ratio,
     port::CopySubrangeToArray(tensor->tensor_content(), 0,
                               new_num_values * sizeof(T),
                               reinterpret_cast<char*>(tmp.data()));
+    if (need_to_swap_bytes) {
+      TF_CHECK_OK(ByteSwapArray(tmp.data(), new_num_values));
+    }
     tensor->clear_tensor_content();
     const T* begin = tmp.begin();
     const T* end = tmp.end();
