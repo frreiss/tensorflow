@@ -25,6 +25,7 @@ limitations under the License.
 #include "tensorflow/core/platform/protobuf.h"
 #include "tensorflow/core/platform/tensor_coding.h"
 #include "tensorflow/core/platform/types.h"
+#include "tensorflow/core/util/byte_swap.h"
 
 namespace tensorflow {
 namespace tensor {
@@ -217,6 +218,17 @@ bool CompressTensorContent(float min_compression_ratio,
       static_cast<int64>(num_bytes / min_compression_ratio)) {
     return false;
   }
+
+  // The tensor_content field is always stored in little-endian order.
+  // Byte-swap if necessary.
+  if (not port::kLittleEndian) {
+    // It's safe to swap the values in place because all paths out of this
+    // function call clear_tensor_content().
+    TF_CHECK_OK(
+        ByteSwapArray(reinterpret_cast<T*>(tensor->mutable_tensor_content()),
+                      new_num_values));
+  }
+
   // Copy values to truncated repeated field.
   if (sizeof(FieldType) == sizeof(T)) {
     FieldType* dst_ptr =
