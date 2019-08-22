@@ -70,10 +70,6 @@ void PopulateTensorFromExtra(const RecvBufRespExtra& extra,
     memcpy(head, tensor_content_chunk.data(), tensor_content_chunk.size());
     head += tensor_content_chunk.size();
   }
-  // The tensor_content field is stored in little-endian format.
-  if (not port::kLittleEndian and DataTypeCanUseMemcpy(cpu_tensor->dtype())) {
-    TF_CHECK_OK(ByteSwapTensor(cpu_tensor));
-  }
 }
 }  // namespace
 
