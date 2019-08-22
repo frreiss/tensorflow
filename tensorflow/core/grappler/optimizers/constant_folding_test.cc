@@ -28,6 +28,7 @@ limitations under the License.
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/tensor_coding.h"
+#include "tensorflow/core/util/byte_swap.h"
 
 namespace tensorflow {
 namespace grappler {
@@ -3905,6 +3906,10 @@ TEST_F(ConstantFoldingTest, MaterializeConstantValuedNodeHugeFill) {
   TensorProto* t = (*node->mutable_attr())["value"].mutable_tensor();
   t->clear_int_val();
   int val = 42;
+  if (not port::kLittleEndian) {
+    // tensor_content is always in little-endian order
+    val = BYTE_SWAP_32(val);
+  }
   port::CopyFromArray(t->mutable_tensor_content(),
                       reinterpret_cast<const char*>(&val), sizeof(int));
   item.fetch = {"fill_huge"};

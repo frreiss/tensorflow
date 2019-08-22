@@ -49,6 +49,7 @@ limitations under the License.
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/tensor_coding.h"
+#include "tensorflow/core/util/byte_swap.h"
 #include "tensorflow/core/util/device_name_utils.h"
 #include "tensorflow/core/util/saved_tensor_slice_util.h"
 #include "tensorflow/core/util/strided_slice_op.h"
@@ -104,6 +105,10 @@ bool ValuesFromConstNode(const NodeDef& node, std::vector<T>* values) {
     values->resize(tensor_content_size / sizeof(T));
     port::CopyToArray(tensor.tensor_content(),
                       reinterpret_cast<char*>(values->data()));
+    if (not port::kLittleEndian) {
+      // tensor_content is always stored in little-endian format.
+      TF_CHECK_OK(ByteSwapArray(values->data(), values->size()));
+    }
     return true;
   }
 

@@ -36,6 +36,7 @@ limitations under the License.
 #include "tensorflow/core/platform/stream_executor.h"
 #include "tensorflow/core/platform/tensor_coding.h"
 #include "tensorflow/core/platform/tracing.h"
+#include "tensorflow/core/util/byte_swap.h"
 #include "tensorflow/core/util/util.h"
 
 // IMPLEMENTATION NOTE:
@@ -148,6 +149,7 @@ void GPUUtil::SetProtoFromGPU(const Tensor& tensor, Device* dev,
   Allocator* alloc = nullptr;
   char* buf = nullptr;
   const int64 total_bytes = is_dead ? 0 : tensor.TotalBytes();
+  const int64 num_elements = tensor.NumElements();
   if (total_bytes > 0) {
     tracing::ScopedAnnotation annotation("SetProtoFromGPU");
     alloc = GPUProcessState::singleton()->GetGpuHostAllocator(0);
@@ -165,13 +167,19 @@ void GPUUtil::SetProtoFromGPU(const Tensor& tensor, Device* dev,
   // Use of tensor may outlive stack scope, so keep a ref.
   TensorReference tensor_ref(tensor);
   dev_info->event_mgr->ThenExecute(
-      send_device_to_host_stream, [send_device_to_host_stream, done, proto, buf,
-                                   total_bytes, alloc, tensor_ref]() {
+      send_device_to_host_stream,
+      [send_device_to_host_stream, done, proto, buf, total_bytes, num_elements,
+       alloc, tensor_ref]() {
         if (!send_device_to_host_stream->ok()) {
           LOG(FATAL) << "SetProtoFromGPU: GPU Memcpy failed";
         }
         tensor_ref.Unref();
         if (total_bytes > 0) {
+          if (not port::kLittleEndian) {
+            // tensor_content is always in little endian format
+            TF_CHECK_OK(
+                ByteSwapArray(buf, total_bytes / num_elements, num_elements));
+          }
           port::CopyFromArray(proto->mutable_tensor_content(), buf,
                               total_bytes);
           if (LogMemory::IsEnabled()) {

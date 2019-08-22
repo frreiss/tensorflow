@@ -25,6 +25,7 @@ limitations under the License.
 #include "tensorflow/core/platform/protobuf_internal.h"
 #include "tensorflow/core/protobuf/transport_options.pb.h"
 #include "tensorflow/core/protobuf/worker.pb.h"
+#include "tensorflow/core/util/byte_swap.h"
 
 namespace tensorflow {
 
@@ -66,9 +67,12 @@ void PopulateTensorFromExtra(const RecvBufRespExtra& extra,
                              Tensor* cpu_tensor) {
   char* head = reinterpret_cast<char*>(DMAHelper::base(cpu_tensor));
   for (const auto& tensor_content_chunk : extra.tensor_content()) {
-    memcpy(head, tensor_content_chunk.data(),
-           tensor_content_chunk.size());
+    memcpy(head, tensor_content_chunk.data(), tensor_content_chunk.size());
     head += tensor_content_chunk.size();
+  }
+  // The tensor_content field is stored in little-endian format.
+  if (not port::kLittleEndian and DataTypeCanUseMemcpy(cpu_tensor->dtype())) {
+    TF_CHECK_OK(ByteSwapTensor(cpu_tensor));
   }
 }
 }  // namespace
