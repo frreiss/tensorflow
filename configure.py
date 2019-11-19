@@ -1155,29 +1155,38 @@ def system_specific_test_config(env):
   """Add default build and test flags required for TF tests to bazelrc."""
   write_to_bazelrc('test --flaky_test_attempts=3')
   write_to_bazelrc('test --test_size_filters=small,medium')
-  write_to_bazelrc(
-      'test --test_tag_filters=-benchmark-test,-no_oss,-oss_serial')
-  write_to_bazelrc('test --build_tag_filters=-benchmark-test,-no_oss')
+  # Each instance of --test_tag_filters or --build_tag_filters overrides all
+  # previous instances, so we need to build up a complete list and write a
+  # single list of filters for the .bazelrc file.
+  # Filters to use with both --test_tag_filters and --build_tag_filters
+  common_filters = ['-benchmark-test', '-no_oss']
+  # Additional filters for --test_tag_filters beyond those in common_filters
+  addl_test_filters = ['-oss_serial']
   if is_windows():
+    common_filters.append('-no_windows')
     if env.get('TF_NEED_CUDA', None) == '1':
-      write_to_bazelrc(
-          'test --test_tag_filters=-no_windows,-no_windows_gpu,-no_gpu')
-      write_to_bazelrc(
-          'test --build_tag_filters=-no_windows,-no_windows_gpu,-no_gpu')
+      common_filters += ['-no_windows_gpu', '-no_gpu']
     else:
-      write_to_bazelrc('test --test_tag_filters=-no_windows,-gpu')
-      write_to_bazelrc('test --build_tag_filters=-no_windows,-gpu')
+      common_filters.append('-gpu')
   elif is_macos():
-    write_to_bazelrc('test --test_tag_filters=-gpu,-nomac,-no_mac')
-    write_to_bazelrc('test --build_tag_filters=-gpu,-nomac,-no_mac')
+    common_filters += ['-gpu', '-nomac', '-no_mac']
   elif is_linux():
     if env.get('TF_NEED_CUDA', None) == '1':
-      write_to_bazelrc('test --test_tag_filters=-no_gpu')
-      write_to_bazelrc('test --build_tag_filters=-no_gpu')
+      common_filters.append('-no_gpu')
       write_to_bazelrc('test --test_env=LD_LIBRARY_PATH')
     else:
-      write_to_bazelrc('test --test_tag_filters=-gpu')
-      write_to_bazelrc('test --build_tag_filters=-gpu')
+      common_filters.append('-gpu')
+  # Targets with the 'v1only' tag should be disabled in v2 builds. With the
+  # current version of Bazel, the only way to implement this behavior is to
+  # have separate tag sets for the two configurations.
+  write_to_bazelrc('test:v1 --test_tag_filters=%s'
+                   % ','.join(common_filters + addl_test_filters))
+  write_to_bazelrc('test:v1 --build_tag_filters=%s'
+                   % ','.join(common_filters))
+  write_to_bazelrc('test:v2 --test_tag_filters=%s'
+                   % ','.join(common_filters + addl_test_filters + ['-v1only']))
+  write_to_bazelrc('test:v2 --build_tag_filters=%s'
+                   % ','.join(common_filters + ['-v1only']))
 
 
 def set_system_libs_flag(environ_cp):
