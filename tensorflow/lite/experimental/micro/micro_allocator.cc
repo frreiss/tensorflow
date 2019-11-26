@@ -29,6 +29,25 @@ limitations under the License.
 namespace tflite {
 
 namespace {
+
+// Copy the contents of a FlatBuffers Vector to a TfLiteIntArray created with
+// the indicated allocator.
+template <class T>
+TfLiteStatus FlatBufferIntArrayToTfLiteIntArray(
+    const T* flat_array, SimpleMemoryAllocator* allocator,
+    TfLiteIntArray** result) {
+  TfLiteIntArray* ret =
+      reinterpret_cast<TfLiteIntArray*>(allocator->AllocateFromTail(
+          TfLiteIntArrayGetSizeInBytes(flat_array->Length()),
+          alignof(TfLiteIntArray)));
+  ret->size = flat_array->Length();
+  for (int i = 0; i < flat_array->Length(); i++) {
+    ret->data[i] = flat_array->Get(i);
+  }
+  *result = ret;
+  return kTfLiteOk;
+}
+
 // Used to hold information used during allocation calculations.
 struct TensorInfo {
   const tflite::Tensor* flatbuffer_tensor;
@@ -179,11 +198,26 @@ TfLiteStatus MicroAllocator::AllocateNodeAndRegistrations(
                                         (void**)(&builtin_data)));
     }
 
-    // Disregard const qualifier to workaround with existing API.
+    // Instead of copying the input and output indices, maintain pointers
+    // into the FlatBuffers Vector objects in the model, which happen to have
+    // the same memory format as TfLiteIntArray.
+    // Disregard const qualifier as a workaround for the inputs and outputs
+    // fields of TfLiteNode being mutable.
     TfLiteIntArray* inputs_array = const_cast<TfLiteIntArray*>(
         reinterpret_cast<const TfLiteIntArray*>(op->inputs()));
     TfLiteIntArray* outputs_array = const_cast<TfLiteIntArray*>(
         reinterpret_cast<const TfLiteIntArray*>(op->outputs()));
+
+    if (!FLATBUFFERS_LITTLEENDIAN) {
+      // Big-endian architecture.
+      // Make a copy of the input and output indices, because TfLiteIntArray is
+      // always in host byte order and FlatBuffers' Vectors are always in
+      // little-endian byte order.
+      TF_LITE_ENSURE_STATUS(FlatBufferIntArrayToTfLiteIntArray(
+          op->inputs(), &memory_allocator_, &inputs_array));
+      TF_LITE_ENSURE_STATUS(FlatBufferIntArrayToTfLiteIntArray(
+          op->outputs(), &memory_allocator_, &outputs_array));
+    }
 
     TfLiteNode* node = &(output[i].node);
     node->inputs = inputs_array;
