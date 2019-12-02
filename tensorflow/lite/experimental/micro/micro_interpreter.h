@@ -109,11 +109,6 @@ class MicroInterpreter {
   struct pairTfLiteNodeAndRegistration node_and_registration(int node_index);
 
  private:
-  void CorrectTensorEndianness(TfLiteTensor* tensorCorr);
-
-  template <class T>
-  void CorrectTensorDataEndianness(T* data, int32_t size);
-
   NodeAndRegistration* node_and_registrations_;
 
   const Model* model_;

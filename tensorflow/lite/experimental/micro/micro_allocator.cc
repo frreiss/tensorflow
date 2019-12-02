@@ -29,7 +29,6 @@ limitations under the License.
 namespace tflite {
 
 namespace {
-
 // Copy the contents of a FlatBuffers Vector to a TfLiteIntArray created with
 // the indicated allocator.
 template <class T>
@@ -438,6 +437,8 @@ TfLiteStatus MicroAllocator::InitializeRuntimeTensor(
       if (size_t array_size = array->size()) {
         // We've found a buffer with valid data, so update the runtime tensor
         // data structure to point to it.
+        // Note that other code further down in this function may make a deep
+        // copy of the buffer to correct its byte order.
         result->data.raw =
             const_cast<char*>(reinterpret_cast<const char*>(array->data()));
         // We set the data from a serialized buffer, so record tha.
@@ -531,12 +532,75 @@ TfLiteStatus MicroAllocator::InitializeRuntimeTensor(
   } else {
     result->name = "<No name>";
   }
+
+  // Data in FlatBuffers files is stored in little-endian format. Byte-swap
+  // fields to host byte order as needed.
+  if (!FLATBUFFERS_LITTLEENDIAN && type_size > 1U) {
+    // Here we assume that anything tagged with the kTfLiteMmapRo alloction
+    // type is a pointer to the raw contents of a FlatBuffers::Vector<int8>
+    // that is stored on a read-only page of memory -- either inside object
+    // code or on a page opened with mmap() with the PROT_READ flag.
+    // TODO(frreiss): Expand the TfLiteAllocationType enum so we can
+    // distinguish between (a) raw FlatBuffers data in read-only pages of
+    // memory, (b) raw FlatBuffers data on writeable pages, and (c) data in
+    // host byte order.
+    if (kTfLiteMmapRo == result->allocation_type) {
+      // Read-only memory region ==> make a deep copy
+      void* read_only_data = result->data.data;
+      result->data.data =
+          reinterpret_cast<void*>(memory_allocator_.AllocateFromTail(
+              result->bytes, /*alignment=*/type_size));
+      memcpy(result->data.data, read_only_data, result->bytes);
+
+      // Byte-swap the copy
+      CorrectTensorEndianness(result);
+    }
+  }
+
   // These aren't used by the micro flavor of TFL, so set them to defaults.
   result->allocation = nullptr;
   result->delegate = nullptr;
   result->buffer_handle = 0;
   result->data_is_stale = false;
   return kTfLiteOk;
+}
+
+void MicroAllocator::CorrectTensorEndianness(TfLiteTensor* tensor) {
+  int32_t element_count = 1;
+  for (int d = 0; d < tensor->dims->size; ++d)
+    element_count *= reinterpret_cast<const int32_t*>(tensor->dims->data)[d];
+
+  switch (tensor->type) {
+    case TfLiteType::kTfLiteFloat32:
+      CorrectTensorDataEndianness(tensor->data.f, element_count);
+      break;
+    case TfLiteType::kTfLiteFloat16:
+      CorrectTensorDataEndianness(tensor->data.f16, element_count);
+      break;
+    case TfLiteType::kTfLiteInt64:
+      CorrectTensorDataEndianness(tensor->data.i64, element_count);
+      break;
+    case TfLiteType::kTfLiteInt32:
+      CorrectTensorDataEndianness(tensor->data.i32, element_count);
+      break;
+    case TfLiteType::kTfLiteInt16:
+      CorrectTensorDataEndianness(tensor->data.i16, element_count);
+      break;
+    case TfLiteType::kTfLiteComplex64:
+      CorrectTensorDataEndianness(tensor->data.c64, element_count);
+      break;
+    default:
+      // Do nothing for other data types.
+      break;
+  }
+}
+
+template <class T>
+void MicroAllocator::CorrectTensorDataEndianness(T* data,
+                                                 int32_t element_count) {
+  for (int32_t i = 0; i < element_count; ++i) {
+    data[i] = flatbuffers::EndianScalar(data[i]);
+  }
 }
 
 }  // namespace tflite

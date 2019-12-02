@@ -75,6 +75,12 @@ class MicroAllocator {
       NodeAndRegistration** node_and_registrations);
 
  private:
+  void CorrectTensorEndianness(TfLiteTensor* tensor);
+
+  template <class T>
+  void CorrectTensorDataEndianness(T* data, int32_t element_count);
+
+ private:
   const Model* model_;
   SimpleMemoryAllocator memory_allocator_;
   ErrorReporter* error_reporter_;
