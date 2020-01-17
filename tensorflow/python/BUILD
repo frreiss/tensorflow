@@ -822,6 +822,8 @@ cc_library(
     srcs = ["lib/core/py_seq_tensor.cc"],
     hdrs = ["lib/core/py_seq_tensor.h"],
     deps = [
+        ":ndarray_tensor",
+        ":ndarray_tensor_bridge",
         ":numpy_lib",
         ":py_util",
         ":safe_ptr",
@@ -2773,6 +2775,7 @@ py_library(
         ":framework_for_generated_wrappers",
         ":math_ops",
         ":sparse_ops",
+        "//tensorflow/compiler/tf2xla/ops:gen_xla_ops",
     ],
 )
 
