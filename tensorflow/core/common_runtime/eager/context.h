@@ -61,6 +61,7 @@ limitations under the License.
 #include "tensorflow/core/lib/gtl/flatset.h"
 #include "tensorflow/core/lib/gtl/inlined_vector.h"
 #include "tensorflow/core/lib/gtl/map_util.h"
+#include "tensorflow/core/lib/io/cache.h"
 
 #include "tensorflow/core/platform/casts.h"
 #include "tensorflow/core/platform/fingerprint.h"
@@ -210,7 +211,7 @@ class EagerContext : public ImmediateExecutionContext, public core::RefCounted {
   }
 
   // Clear pending nodes in thread executors and kernel caches.
-  void ClearCachesAndThreadExecutors();
+  void ClearCachesAndThreadExecutors() override;
   // Clear pending nodes in default executor and kernel caches.
   void ClearCachesAndDefaultExecutor();
 
@@ -607,11 +608,11 @@ class EagerContext : public ImmediateExecutionContext, public core::RefCounted {
   struct RegisteredFunction : public core::RefCounted {
     ~RegisteredFunction() override {}
 
-    std::unique_ptr<std::vector<Fprint128>> cached_kernel_keys;
+    std::unique_ptr<std::vector<std::string>> cached_kernel_keys;
   };
-  std::unordered_map<Fprint128, core::RefCountPtr<KernelAndDevice>,
-                     Fprint128Hasher>
-      kernel_cache_ TF_GUARDED_BY(cache_mu_);
+
+  // Cache that maps Fprint128 to core::RefCountPtr<KernelAndDevice>
+  std::unique_ptr<table::Cache> kernel_cache_ TF_GUARDED_BY(cache_mu_);
   std::unordered_map<string, RegisteredFunction*> registered_functions_
       TF_GUARDED_BY(cache_mu_);
 

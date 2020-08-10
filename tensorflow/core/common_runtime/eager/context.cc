@@ -40,6 +40,7 @@ limitations under the License.
 #include "tensorflow/core/framework/graph_def_util.h"
 #include "tensorflow/core/framework/function.h"
 #include "tensorflow/core/lib/core/errors.h"
+#include "tensorflow/core/platform/stringprintf.h"
 #include "tensorflow/core/public/version.h"
 #include "tensorflow/core/util/device_name_utils.h"
 #if !defined(IS_MOBILE_PLATFORM)
@@ -67,6 +68,24 @@ bool ReadBoolFromEnvVar(StringPiece env_var_name, bool default_val) {
 auto* eager_context_created =
     monitoring::Gauge<bool, 0>::New("/tensorflow/core/eager_context_created",
                                     "True if an eager context was created.");
+
+// Convert the structs that AddKernelToCache() and GetCachedKernel()
+// use as keys to strings, because the internal implementation we use
+// requires strings.
+const std::string CacheKeyToString(const Fprint128& cache_key) {
+  return strings::Printf("%016llx,%016llx", cache_key.low64, cache_key.high64);
+}
+
+// Number of kernels to retain in the context's LRU cache
+const size_t KERNEL_CACHE_SIZE = 10000;
+
+// Callback invoked when a kernel is removed from the kernel cache.
+// `key` will be a string as returned by CacheKeyToString()
+// `value` is a pointer to the KernelAndDevice object
+void KernelCacheDeletionCallback(const Slice& key, void* value) {
+  KernelAndDevice* kernel = static_cast<KernelAndDevice*>(value);
+  kernel->Unref();
+}
 
 }  // namespace
 
@@ -124,6 +143,9 @@ EagerContext::EagerContext(
       new CollectiveExecutorMgr(opts.config, local_device_mgr(), std::move(drl),
                                 std::move(cprl)),
       /*owned=*/true);
+
+  kernel_cache_ =
+      std::unique_ptr<table::Cache>(table::NewLRUCache(KERNEL_CACHE_SIZE));
 }
 
 AbstractTensorInterface* EagerContext::CreateInt64Scalar(int64 value) {
@@ -390,7 +412,9 @@ void EagerContext::ClearCachesAndDefaultExecutor() {
   // as well.
   mutex_lock ml(cache_mu_);
   default_executor_.WaitForAllPendingNodes().IgnoreError();
-  kernel_cache_.clear();
+  // The only way to clear a table::Cache is to delete it.
+  kernel_cache_ =
+      std::unique_ptr<table::Cache>(table::NewLRUCache(KERNEL_CACHE_SIZE));
   for (auto& entry : registered_functions_) {
     entry.second->cached_kernel_keys->clear();
   }
@@ -745,7 +769,7 @@ Status EagerContext::AddFunctionDef(const FunctionDef& fdef,
     if (registered_function == nullptr) {
       registered_function = new RegisteredFunction;
       registered_function->cached_kernel_keys =
-          absl::make_unique<std::vector<Fprint128>>();
+          absl::make_unique<std::vector<std::string>>();
       gtl::InsertOrUpdate(&registered_functions_, fdef.signature().name(),
                           registered_function);
     } else {
@@ -779,7 +803,7 @@ Status EagerContext::RemoveFunction(const string& func) {
     is_last_ref = registered_function->RefCountIsOne();
     if (is_last_ref) {
       for (auto& key : *registered_function->cached_kernel_keys) {
-        kernel_cache_.erase(key);
+        kernel_cache_->Erase(key);
       }
       registered_functions_.erase(func);
     }
@@ -843,26 +867,32 @@ Status EagerContext::SyncExecutors() {
 core::RefCountPtr<KernelAndDevice> EagerContext::GetCachedKernel(
     Fprint128 cache_key) {
   tf_shared_lock l(cache_mu_);
-  auto iter = kernel_cache_.find(cache_key);
-  if (iter == kernel_cache_.end()) {
+  auto key_str = CacheKeyToString(cache_key);
+  auto handle = kernel_cache_->Lookup(key_str);
+  if (handle == nullptr) {
     return nullptr;
   }
-  core::RefCountPtr<KernelAndDevice> new_ref(iter->second.get());
+  auto kernel = static_cast<KernelAndDevice*>(kernel_cache_->Value(handle));
+  core::RefCountPtr<KernelAndDevice> new_ref(kernel);
   new_ref->Ref();
+  // Now that we've incremented the reference count on the KernelAndDevice,
+  // it's safe to tell the cache not to keep this entry pinned.
+  kernel_cache_->Release(handle);
   return new_ref;
 }
 
 void EagerContext::AddKernelToCache(Fprint128 cache_key,
                                     KernelAndDevice* kernel) {
   mutex_lock ml(cache_mu_);
-  core::RefCountPtr<KernelAndDevice> new_ref(kernel);
-  new_ref->Ref();
-  kernel_cache_[cache_key] = std::move(new_ref);
+  auto key_str = CacheKeyToString(cache_key);
+  kernel->Ref();  // Unreferenced in KernelCacheDeletionCallback()
+  kernel_cache_->Insert(key_str, static_cast<void*>(kernel),
+                        /* charge= */ 1, &KernelCacheDeletionCallback);
   auto* registered_function =
       gtl::FindPtrOrNull(registered_functions_, kernel->name());
   // The kernel name can be either a primitive op or a function.
   if (registered_function != nullptr) {
-    registered_function->cached_kernel_keys->emplace_back(cache_key);
+    registered_function->cached_kernel_keys->emplace_back(key_str);
   }
 }
 
