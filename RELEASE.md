@@ -86,9 +86,11 @@
       option.
 * `tf.image`:
     * Added deterministic `tf.image.stateless_random_*` functions for each
-      `tf.image.random_*` function. Given the same seed, the stateless functions
-      produce the same results independent of how many times the function is
-      called, and independent of global seed settings.
+      `tf.image.random_*` function. Added a new op
+      `stateless_sample_distorted_bounding_box` which is a determinstic
+      version of `sample_distorted_bounding_box` op. Given the same seed, these
+      stateless functions/ops produce the same results independent of how many
+      times the function is called, and independent of global seed settings.
 *   `tf.distribute`:
     * <ADD RELEASE NOTES HERE>
 * `tf.keras`:
@@ -101,16 +103,34 @@
     * `Optimizer.minimize` can now accept a loss `Tensor` and a `GradientTape`
       as an alternative to accepting a `callable` loss.
     * Added `beta` parameter to FTRL optimizer to match paper.
+    * Added `mobilenet_v3` to keras application model.
 * `tf.function` / AutoGraph:
   * Added `experimental_follow_type_hints` argument for `tf.function`. When
     True, the function may use type annotations to optimize the tracing
     performance.
   * Added support for `iter(DistributedDataset)` in AutoGraph `for` loops.
+  * AutoGraph now allows creating new symbols inside a TensorFLow loop, if
+    the values of these symbols at an iteration does not depend on the previous
+    iteration. These types of loops must run at least one iteration, and will
+    raise a runtime error otherwise.
+
+    Example:
+
+    ```
+    for batch in data:
+      outputs = train_step(batch)
+    tf.print('final outputs', outputs)
+    ```
+    See tensorflow/python/autograph/g3doc/reference/limitations.md for more
+    info.
 *   `tf.lite`:
     * `DynamicBuffer::AddJoinedString()` will now add a separator if the first
       string to be joined is empty.
     * `TFLiteConverter`:
       * Support optional flags `inference_input_type` and `inference_output_type` for full integer quantized models. This allows users to modify the model input and output type to integer types (`tf.int8`, `tf.uint8`) instead of defaulting to float type (`tf.float32`).
+    * Deprecate `Interpreter::UseNNAPI(bool)` C++ API
+      * Prefer using `NnApiDelegate()` and related delegate configuration methods directly.
+    * Add NNAPI Delegation support for requantization use cases by converting the operation into a dequantize-quantize pair.
     * <ADD RELEASE NOTES HERE>
 *   `tf.random`:
     * <ADD RELEASE NOTES HERE>
