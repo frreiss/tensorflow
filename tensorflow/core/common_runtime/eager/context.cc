@@ -886,8 +886,10 @@ void EagerContext::AddKernelToCache(Fprint128 cache_key,
   mutex_lock ml(cache_mu_);
   auto key_str = CacheKeyToString(cache_key);
   kernel->Ref();  // Unreferenced in KernelCacheDeletionCallback()
-  kernel_cache_->Insert(key_str, static_cast<void*>(kernel),
-                        /* charge= */ 1, &KernelCacheDeletionCallback);
+  auto handle =
+      kernel_cache_->Insert(key_str, static_cast<void*>(kernel),
+                            /* charge= */ 1, &KernelCacheDeletionCallback);
+  kernel_cache_->Release(handle);  // *kernel is already ref-counted
   auto* registered_function =
       gtl::FindPtrOrNull(registered_functions_, kernel->name());
   // The kernel name can be either a primitive op or a function.
